@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Project specific
+data/sample_videos/*
+outputs/*
+!data/sample_videos/.gitkeep
+!outputs/.gitkeep
+
+# Model weights (large files)
+*.pt
+
+# OS
+.DS_Store
+Thumbs.db
