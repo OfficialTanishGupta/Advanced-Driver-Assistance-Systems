@@ -8,12 +8,19 @@ to predict collision risk. Built as an intermediate ML/CV portfolio project.
 - YOLOv8 object detection (cars, motorcycles, buses, trucks, pedestrians)
 - ByteTrack multi-object tracking with persistent IDs
 
-## Roadmap
+## Current Status: Week 2 — Kalman Filter Trajectory Prediction
+- YOLOv8 object detection (cars, motorcycles, buses, trucks, pedestrians)
+- ByteTrack multi-object tracking with persistent IDs
+- Per-vehicle Kalman filter (constant-velocity model, state: x y vx vy)
+- Trail visualization of past positions
+- Predicted future trajectory arrow (~1 second ahead)
 
+## Roadmap
 - [x] Detection + Tracking
-- [ ] Kalman filter trajectory prediction
+- [x] Kalman filter trajectory prediction
 - [ ] Distance estimation heuristic
-- [ ] Risk scoring (TTC) + UI overlay
+- [ ] Risk scoring (TTC) + danger zone
+- [ ] Audio alert + final UI polish
 
 ## Setup
 
