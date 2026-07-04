@@ -3,18 +3,21 @@ import cv2
 
 from detector import VehicleDetector
 from tracker import draw_detections
+from predictor import ObjectPredictor
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Road Accident Predictor - Week 1")
+    parser = argparse.ArgumentParser(description="Road Accident Predictor - Week 2")
     parser.add_argument(
         "--source",
         type=str,
         default="0",
-        help="Path to video file, or '0' for webcam, or phone stream URL",
+        help="Video file path, '0' for webcam, or phone stream URL",
     )
     parser.add_argument(
-        "--save", action="store_true", help="Save annotated output video to outputs/"
+        "--save",
+        action="store_true",
+        help="Save annotated output to outputs/annotated.mp4",
     )
     return parser.parse_args()
 
@@ -24,8 +27,9 @@ def main():
     source = 0 if args.source == "0" else args.source
 
     detector = VehicleDetector(model_path="yolov8n.pt")
-    cap = cv2.VideoCapture(source)
+    predictor = ObjectPredictor()
 
+    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         print(f"Error: could not open video source {source}")
         return
@@ -44,7 +48,8 @@ def main():
             break
 
         detections = detector.track(frame)
-        frame = draw_detections(frame, detections)
+        predictor.update(detections)
+        frame = draw_detections(frame, detections, predictor=predictor)
 
         cv2.imshow("Road Accident Predictor", frame)
         if writer:
