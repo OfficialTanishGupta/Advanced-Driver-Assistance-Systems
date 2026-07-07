@@ -1,13 +1,18 @@
 import argparse
 import cv2
+import winsound  # Windows built-in, no install needed
 
 from detector import VehicleDetector
-from tracker import draw_detections
+from tracker import draw_detections, draw_hud
 from predictor import ObjectPredictor
+from risk import RiskScorer, get_danger_zone_pts
+
+
+ALERT_COOLDOWN_FRAMES = 60  
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Road Accident Predictor - Week 2")
+    parser = argparse.ArgumentParser(description="Road Accident Predictor - Week 3")
     parser.add_argument(
         "--source",
         type=str,
@@ -19,6 +24,7 @@ def parse_args():
         action="store_true",
         help="Save annotated output to outputs/annotated.mp4",
     )
+    parser.add_argument("--no-alert", action="store_true", help="Disable audio alerts")
     return parser.parse_args()
 
 
@@ -28,6 +34,7 @@ def main():
 
     detector = VehicleDetector(model_path="yolov8n.pt")
     predictor = ObjectPredictor()
+    scorer = RiskScorer()
 
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
@@ -42,14 +49,40 @@ def main():
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         writer = cv2.VideoWriter("outputs/annotated.mp4", fourcc, fps, (width, height))
 
+    alert_cooldown = 0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
+        # Dynamically sample image boundary scales
+        fh, fw = frame.shape[:2]
+
+        # Machine learning inference & telemetry calculations
         detections = detector.track(frame)
         predictor.update(detections)
-        frame = draw_detections(frame, detections, predictor=predictor)
+        risk_scores = scorer.score(detections, predictor, fw, fh, frame=frame)
+        zone_pts = get_danger_zone_pts(fw, fh, frame=frame)
+
+        # UI Overlay Compositing
+        frame = draw_detections(
+            frame,
+            detections,
+            predictor=predictor,
+            risk_scores=risk_scores,
+            zone_pts=zone_pts,
+        )
+        frame = draw_hud(frame, risk_scores)
+
+        # Audio Thread Alerting for High Threat Signals
+        if not args.no_alert:
+            high_risk = any(v["risk"] == "HIGH" for v in risk_scores.values())
+            if high_risk and alert_cooldown == 0:
+                winsound.Beep(1000, 200)  # 1000 Hz, 200ms
+                alert_cooldown = ALERT_COOLDOWN_FRAMES
+            if alert_cooldown > 0:
+                alert_cooldown -= 1
 
         cv2.imshow("Road Accident Predictor", frame)
         if writer:

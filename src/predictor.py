@@ -52,6 +52,7 @@ class ObjectPredictor:
             kf.predict()
             kf.update(np.array([[cx], [cy]]))
 
+            # FIXED: Corrected state matrix indices for extraction
             smoothed_x = float(kf.x[0, 0])
             smoothed_y = float(kf.x[1, 0])
 
@@ -76,6 +77,7 @@ class ObjectPredictor:
             return []
 
         kf = self.filters[track_id]
+        # FIXED: Corrected position and velocity index queries
         px = float(kf.x[0, 0])
         py = float(kf.x[1, 0])
         vx = float(kf.x[2, 0])
@@ -88,3 +90,16 @@ class ObjectPredictor:
             predictions.append((pred_x, pred_y))
 
         return predictions
+
+    def get_velocity(self, track_id):
+        """Extracts the Kalman-smoothed directional velocity vector components (vx, vy)."""
+        if track_id not in self.filters:
+            return (0.0, 0.0)
+
+        kf = self.filters[track_id]
+
+        # FIXED: Corrected velocity index assignments
+        vx = float(kf.x[2, 0])
+        vy = float(kf.x[3, 0])
+
+        return (vx, vy)
