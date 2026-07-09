@@ -5,10 +5,9 @@ import winsound  # Windows built-in, no install needed
 from detector import VehicleDetector
 from tracker import draw_detections, draw_hud
 from predictor import ObjectPredictor
-from risk import RiskScorer, get_danger_zone_pts
+from risk import RiskScorer
 
-
-ALERT_COOLDOWN_FRAMES = 60  
+ALERT_COOLDOWN_FRAMES = 60
 
 
 def parse_args():
@@ -23,6 +22,12 @@ def parse_args():
         "--save",
         action="store_true",
         help="Save annotated output to outputs/annotated.mp4",
+    )
+    parser.add_argument(
+        "--hood-frac",
+        type=float,
+        default=None,
+        help="Manually override hood line as a fraction of frame height (0.0-1.0). Skips auto-detection.",
     )
     parser.add_argument("--no-alert", action="store_true", help="Disable audio alerts")
     return parser.parse_args()
@@ -43,7 +48,7 @@ def main():
 
     writer = None
     if args.save:
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
         fps = cap.get(cv2.CAP_PROP_FPS) or 20
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -56,14 +61,14 @@ def main():
         if not ret:
             break
 
-        # Dynamically sample image boundary scales
         fh, fw = frame.shape[:2]
 
         # Machine learning inference & telemetry calculations
         detections = detector.track(frame)
         predictor.update(detections)
-        risk_scores = scorer.score(detections, predictor, fw, fh, frame=frame)
-        zone_pts = get_danger_zone_pts(fw, fh, frame=frame)
+        risk_scores, zone_pts = scorer.score(
+            detections, predictor, fw, fh, frame=frame, hood_frac=args.hood_frac
+        )
 
         # UI Overlay Compositing
         frame = draw_detections(
@@ -75,7 +80,6 @@ def main():
         )
         frame = draw_hud(frame, risk_scores)
 
-        # Audio Thread Alerting for High Threat Signals
         if not args.no_alert:
             high_risk = any(v["risk"] == "HIGH" for v in risk_scores.values())
             if high_risk and alert_cooldown == 0:
