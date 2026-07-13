@@ -1,9 +1,9 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
 
-TRAIL_LENGTH      = 20
-PREDICTION_STEPS  = 30
-DEPTH_HISTORY_LEN = 10   
+TRAIL_LENGTH = 20
+PREDICTION_STEPS = 30
+DEPTH_HISTORY_LEN = 10
 
 
 def build_kalman_filter():
@@ -13,18 +13,24 @@ def build_kalman_filter():
     Measurement: [x, y]
     """
     kf = KalmanFilter(dim_x=4, dim_z=2)
-    kf.F = np.array([
-        [1, 0, 1, 0],
-        [0, 1, 0, 1],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1],
-    ], dtype=float)
-    kf.H = np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-    ], dtype=float)
-    kf.R  = np.eye(2) * 10.0
-    kf.Q  = np.eye(4) * 0.1
+    kf.F = np.array(
+        [
+            [1, 0, 1, 0],
+            [0, 1, 0, 1],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    )
+    kf.H = np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+        ],
+        dtype=float,
+    )
+    kf.R = np.eye(2) * 10.0
+    kf.Q = np.eye(4) * 0.1
     kf.Q[2, 2] = 1.0
     kf.Q[3, 3] = 1.0
     kf.P = np.eye(4) * 500.0
@@ -37,11 +43,10 @@ class ObjectPredictor:
     """
 
     def __init__(self):
-        self.filters:       dict[int, KalmanFilter] = {}
-        self.trails:        dict[int, list]          = {}
-        self.predictions:   dict[int, list]          = {}
-        self.depth_history: dict[int, list]          = {}   # NEW
-
+        self.filters: dict[int, KalmanFilter] = {}
+        self.trails: dict[int, list] = {}
+        self.predictions: dict[int, list] = {}
+        self.depth_history: dict[int, list] = {}
 
     def _get_center(self, bbox):
         x1, y1, x2, y2 = bbox
@@ -50,10 +55,9 @@ class ObjectPredictor:
     def _init_filter(self, track_id: int, cx: float, cy: float):
         kf = build_kalman_filter()
         kf.x = np.array([[cx], [cy], [0.0], [0.0]])
-        self.filters[track_id]       = kf
-        self.trails[track_id]        = []
+        self.filters[track_id] = kf
+        self.trails[track_id] = []
         self.depth_history[track_id] = []
-
 
     def update(self, detections: list):
         """Update Kalman filters for all current detections."""
@@ -61,7 +65,7 @@ class ObjectPredictor:
 
         for det in detections:
             track_id = det["id"]
-            cx, cy   = self._get_center(det["bbox"])
+            cx, cy = self._get_center(det["bbox"])
             active_ids.add(track_id)
 
             if track_id not in self.filters:
@@ -71,17 +75,17 @@ class ObjectPredictor:
             kf.predict()
             kf.update(np.array([[cx], [cy]]))
 
-            smoothed_x = float(kf.x[0])
-            smoothed_y = float(kf.x[1])
+            smoothed_x = float(kf.x[0][0])
+            smoothed_y = float(kf.x[1][0])
             self.trails[track_id].append((smoothed_x, smoothed_y))
             if len(self.trails[track_id]) > TRAIL_LENGTH:
                 self.trails[track_id].pop(0)
 
-            future     = []
-            sim_state  = kf.x.copy()
+            future = []
+            sim_state = kf.x.copy()
             for _ in range(PREDICTION_STEPS):
                 sim_state = kf.F @ sim_state
-                future.append((float(sim_state[0]), float(sim_state[1])))
+                future.append((float(sim_state[0][0]), float(sim_state[1][0])))
             self.predictions[track_id] = future
 
         for lost_id in set(self.filters.keys()) - active_ids:
@@ -91,10 +95,7 @@ class ObjectPredictor:
             self.depth_history.pop(lost_id, None)
 
     def update_depth(self, track_id: int, depth_value: float):
-        """
-        Record a new depth reading for a tracked object.
-        Called separately from update() after depth map is computed.
-        """
+        """Record a new depth reading for a tracked object."""
         if track_id not in self.depth_history:
             self.depth_history[track_id] = []
         self.depth_history[track_id].append(depth_value)
@@ -104,8 +105,7 @@ class ObjectPredictor:
     def get_depth_closing_rate(self, track_id: int) -> float:
         """
         Returns average depth units lost per frame (positive = approaching).
-        DA V2: depth decreases as object comes closer, so
-        closing_rate = prev_depth - current_depth per frame.
+        Closing rate = prev_depth - current_depth per frame.
         Returns 0.0 if not enough history.
         """
         hist = self.depth_history.get(track_id, [])
@@ -128,4 +128,4 @@ class ObjectPredictor:
         if track_id not in self.filters:
             return (0.0, 0.0)
         kf = self.filters[track_id]
-        return (float(kf.x[2]), float(kf.x[3]))
+        return (float(kf.x[2][0]), float(kf.x[3][0]))
