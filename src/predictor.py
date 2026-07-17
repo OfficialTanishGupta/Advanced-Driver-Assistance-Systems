@@ -1,9 +1,11 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
 
-TRAIL_LENGTH = 20
-PREDICTION_STEPS = 30
-DEPTH_HISTORY_LEN = 10
+import config
+
+TRAIL_LENGTH = config.TRAIL_LENGTH
+PREDICTION_STEPS = config.PREDICTION_STEPS
+DEPTH_HISTORY_LEN = config.DEPTH_HISTORY_LEN
 
 
 def build_kalman_filter():
