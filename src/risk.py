@@ -1,15 +1,12 @@
 import cv2
 import numpy as np
 
-DANGER_ZONE_FRAC = {
-    "tl": (0.35, 0.40),
-    "tr": (0.65, 0.40),
-    "br": (0.80, 0.90),
-    "bl": (0.20, 0.90),
-}
+import config
 
-TTC_HIGH   = 2.0
-TTC_MEDIUM = 4.0
+DANGER_ZONE_FRAC = config.DANGER_ZONE_FRAC
+TTC_HIGH         = config.TTC_HIGH
+TTC_MEDIUM       = config.TTC_MEDIUM
+FPS_ESTIMATE     = config.FPS_ESTIMATE
 
 RISK_HIGH   = "HIGH"
 RISK_MEDIUM = "MEDIUM"
