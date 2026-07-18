@@ -1,27 +1,37 @@
 import argparse
 import cv2
 import winsound
+import threading
 
+import config
 from detector import VehicleDetector
 from tracker import draw_detections, draw_hud
 from predictor import ObjectPredictor
 from risk import RiskScorer, get_danger_zone_pts
 from depth import DepthEstimator
-
-ALERT_COOLDOWN_FRAMES = 60
+from logger import RiskLogger
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Road Accident Predictor — Depth Edition"
+    parser = argparse.ArgumentParser(description="Road Accident Predictor")
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="0",
+        help="Video file path, '0' for webcam, or phone RTSP URL",
     )
-    parser.add_argument("--source", type=str, default="0")
-    parser.add_argument("--save", action="store_true")
-    parser.add_argument("--no-alert", action="store_true")
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Save annotated output to outputs/annotated.mp4",
+    )
+    parser.add_argument(
+        "--no-alert", action="store_true", help="Disable audio beep on HIGH risk"
+    )
     parser.add_argument(
         "--show-depth",
         action="store_true",
-        help="Show colourised depth map in a second window",
+        help="Show colourised depth map in second window",
     )
     return parser.parse_args()
 
@@ -30,10 +40,14 @@ def main():
     args = parse_args()
     source = 0 if args.source == "0" else args.source
 
-    detector = VehicleDetector(model_path="yolov8n.pt")
+    detector = VehicleDetector(
+        model_path=config.YOLO_MODEL,
+        conf_threshold=config.CONF_THRESHOLD,
+    )
     predictor = ObjectPredictor()
     scorer = RiskScorer()
-    depth_est = DepthEstimator()  # loads DA V2 Small on startup
+    depth_est = DepthEstimator()
+    logger = RiskLogger()
 
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
@@ -51,69 +65,94 @@ def main():
             "outputs/annotated.mp4", fourcc, fps, (frame_w, frame_h)
         )
 
+    cv2.namedWindow("Road Accident Predictor", cv2.WINDOW_NORMAL)
     alert_cooldown = 0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        fh, fw = frame.shape[:2]
+            fh, fw = frame.shape[:2]
+            logger.tick()
 
-        # 1. Detect + track
-        detections = detector.track(frame)
+            # 1. Detect + track
+            detections = detector.track(frame)
 
-        # 2. Update Kalman filters
-        predictor.update(detections)
+            # 2. Update Kalman filters
+            predictor.update(detections)
 
-        # 3. Estimate depth map
-        depth_map = depth_est.estimate(frame)
+            # 3. Estimate depth map
+            depth_map = depth_est.estimate(frame)
 
-        # 4. Feed per-object depth into predictor history
-        for det in detections:
-            depth_val = depth_est.get_object_depth(depth_map, det["bbox"])
-            predictor.update_depth(det["id"], depth_val)
+            # 4. Feed per-object depth into predictor history
+            for det in detections:
+                depth_val = depth_est.get_object_depth(depth_map, det["bbox"])
+                predictor.update_depth(det["id"], depth_val)
 
-        # 5. Score risk using depth-based TTC
-        risk_scores = scorer.score(detections, predictor, fw, fh)
-        zone_pts = get_danger_zone_pts(fw, fh)
+            # 5. Score risk
+            risk_scores = scorer.score(detections, predictor, fw, fh)
+            zone_pts = get_danger_zone_pts(fw, fh)
 
-        # 6. Draw
-        frame = draw_detections(
-            frame,
-            detections,
-            predictor=predictor,
-            risk_scores=risk_scores,
-            zone_pts=zone_pts,
-        )
-        frame = draw_hud(frame, risk_scores)
+            # 6. Log events
+            logger.log(detections, risk_scores)
 
-        # 7. Audio alert
-        if not args.no_alert:
-            high_risk = any(v["risk"] == "HIGH" for v in risk_scores.values())
-            if high_risk and alert_cooldown == 0:
-                winsound.Beep(1000, 200)
-                alert_cooldown = ALERT_COOLDOWN_FRAMES
-            if alert_cooldown > 0:
-                alert_cooldown -= 1
+            # 7. Draw
+            frame = draw_detections(
+                frame,
+                detections,
+                predictor=predictor,
+                risk_scores=risk_scores,
+                zone_pts=zone_pts,
+            )
+            frame = draw_hud(frame, risk_scores)
 
-        cv2.imshow("Road Accident Predictor", frame)
+            # 8. Show frame
+            cv2.imshow("Road Accident Predictor", frame)
 
-        # Optional: show raw depth map for debugging
-        if args.show_depth:
-            depth_vis = depth_est.get_depth_overlay(depth_map)
-            cv2.imshow("Depth Map (blue=far, red=close)", depth_vis)
+            if args.show_depth:
+                depth_vis = depth_est.get_depth_overlay(depth_map)
+                cv2.imshow("Depth Map (blue=far, red=close)", depth_vis)
 
+            if writer:
+                writer.write(frame)
+
+            # 9. Audio alert
+            if not args.no_alert:
+                risks = [v["risk"] for v in risk_scores.values()]
+                high_risk = "HIGH" in risks
+                medium_risk = "MEDIUM" in risks
+
+                if alert_cooldown == 0:
+                    if high_risk:
+                        threading.Thread(
+                            target=lambda: (
+                                winsound.Beep(1200, 200),
+                                winsound.Beep(1200, 200),
+                            ),
+                            daemon=True,
+                        ).start()
+                        alert_cooldown = config.ALERT_COOLDOWN_FRAMES
+                    elif medium_risk:
+                        threading.Thread(
+                            target=lambda: winsound.Beep(800, 150), daemon=True
+                        ).start()
+                        alert_cooldown = config.ALERT_COOLDOWN_FRAMES // 2
+
+                if alert_cooldown > 0:
+                    alert_cooldown -= 1
+
+            # 10. Exit on Q
+            if cv2.waitKey(30) & 0xFF == ord("q"):
+                break
+
+    finally:
+        logger.close()
+        cap.release()
         if writer:
-            writer.write(frame)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    if writer:
-        writer.release()
-    cv2.destroyAllWindows()
+            writer.release()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
