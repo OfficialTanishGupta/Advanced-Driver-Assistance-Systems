@@ -10,6 +10,7 @@ from predictor import ObjectPredictor
 from risk import RiskScorer, get_danger_zone_pts
 from depth import DepthEstimator
 from logger import RiskLogger
+from lane import LaneDetector
 
 
 def parse_args():
@@ -33,6 +34,16 @@ def parse_args():
         action="store_true",
         help="Show colourised depth map in second window",
     )
+    parser.add_argument(
+        "--show-edges",
+        action="store_true",
+        help="Show Canny edge map used for lane detection",
+    )
+    parser.add_argument(
+        "--no-lane",
+        action="store_true",
+        help="Disable lane detection, use fixed danger zone",
+    )
     return parser.parse_args()
 
 
@@ -48,6 +59,7 @@ def main():
     scorer = RiskScorer()
     depth_est = DepthEstimator()
     logger = RiskLogger()
+    lane_det = LaneDetector() if (config.LANE_ENABLED and not args.no_lane) else None
 
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
@@ -77,28 +89,28 @@ def main():
             fh, fw = frame.shape[:2]
             logger.tick()
 
-            # 1. Detect + track
+            if lane_det is not None:
+                zone_pts, edge_map, confident = lane_det.detect(frame)
+                frame = lane_det.draw_lanes(frame, confident)
+            else:
+                zone_pts = get_danger_zone_pts(fw, fh)
+                edge_map = None
+                confident = False
+
             detections = detector.track(frame)
 
-            # 2. Update Kalman filters
             predictor.update(detections)
 
-            # 3. Estimate depth map
             depth_map = depth_est.estimate(frame)
 
-            # 4. Feed per-object depth into predictor history
             for det in detections:
                 depth_val = depth_est.get_object_depth(depth_map, det["bbox"])
                 predictor.update_depth(det["id"], depth_val)
 
-            # 5. Score risk
-            risk_scores = scorer.score(detections, predictor, fw, fh)
-            zone_pts = get_danger_zone_pts(fw, fh)
+            risk_scores = scorer.score(detections, predictor, fw, fh, zone_pts=zone_pts)
 
-            # 6. Log events
             logger.log(detections, risk_scores)
 
-            # 7. Draw
             frame = draw_detections(
                 frame,
                 detections,
@@ -108,17 +120,25 @@ def main():
             )
             frame = draw_hud(frame, risk_scores)
 
-            # 8. Show frame
+            if lane_det is not None:
+                status = "LANE: ON" if confident else "LANE: FALLBACK"
+                color = (0, 255, 0) if confident else (0, 165, 255)
+                cv2.putText(
+                    frame, status, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2
+                )
+
             cv2.imshow("Road Accident Predictor", frame)
 
             if args.show_depth:
                 depth_vis = depth_est.get_depth_overlay(depth_map)
                 cv2.imshow("Depth Map (blue=far, red=close)", depth_vis)
 
+            if args.show_edges and edge_map is not None:
+                cv2.imshow("Lane Edges (Canny)", edge_map)
+
             if writer:
                 writer.write(frame)
 
-            # 9. Audio alert
             if not args.no_alert:
                 risks = [v["risk"] for v in risk_scores.values()]
                 high_risk = "HIGH" in risks
@@ -143,7 +163,6 @@ def main():
                 if alert_cooldown > 0:
                     alert_cooldown -= 1
 
-            # 10. Exit on Q
             if cv2.waitKey(30) & 0xFF == ord("q"):
                 break
 
