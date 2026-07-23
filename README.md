@@ -3,10 +3,13 @@
 Real-time vehicle collision risk prediction from dashcam or phone camera feed.
 
 ## Roadmap
+- [x] Week 1 — YOLOv8 detection + ByteTrack tracking
+- [x] Week 2 — Kalman filter trajectory prediction
+- [x] Week 3 — Danger zone, TTC risk scoring, audio alert
+- [x] Depth upgrade — MiDaS monocular depth, depth-based TTC
+- [x] Polish — config.py, CSV risk logger
+- [x] Lane upgrade — Canny+Hough lane detection, dynamic danger zone
 
-- [x] Week 1 — YOLOv8 detection + ByteTrack multi-object tracking
-- [x] Week 2 — Per-vehicle Kalman filter, trajectory trail, predicted path arrow
-- [x] Week 3 — Danger zone trapezoid, heuristic TTC, risk scoring, audio alert
 
 ## Setup
 
@@ -25,9 +28,11 @@ python src/main.py --source data/sample_videos/test.mp4
    \`\`\`
 
 ## Args
-
-| Flag         | Description                             |
-| ------------ | --------------------------------------- |
-| `--source`   | Video file / webcam `0` / IP stream URL |
-| `--save`     | Save annotated video to `outputs/`      |
-| `--no-alert` | Disable beep on HIGH risk               |
+| Flag | Description |
+|------|-------------|
+| `--source` | Video file / `0` webcam / IP stream URL |
+| `--save` | Save annotated video to `outputs/` |
+| `--no-alert` | Disable audio alerts |
+| `--show-depth` | Show depth map in second window |
+| `--show-edges` | Show Canny edge map for lane debug |
+| `--no-lane` | Use fixed danger zone instead of lane detection |
