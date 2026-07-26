@@ -21,39 +21,43 @@ class DepthEstimator:
     """
 
     def __init__(self):
-        print("[DepthEstimator] Loading MiDaS — first run downloads weights (~100 MB)...")
+        print(
+            "[DepthEstimator] Loading MiDaS — first run downloads weights (~100 MB)..."
+        )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.model = torch.hub.load(
+        self.model = torch.hub.load(  # type: ignore
             "intel-isl/MiDaS",
             config.MIDAS_MODEL,
-            trust_repo=True,
+            trust_repo=True,  # type: ignore
         )
-        self.model = self.model.to(self.device).eval()
+        self.model = self.model.to(self.device).eval()  # type: ignore
 
-        transforms = torch.hub.load(
+        transforms = torch.hub.load(  # type: ignore
             "intel-isl/MiDaS",
             "transforms",
-            trust_repo=True,
+            trust_repo=True,  # type: ignore
         )
-        self.transform = transforms.small_transform
+        self.transform = transforms.small_transform  # type: ignore
 
         print(f"[DepthEstimator] Running on {self.device}")
 
         self._cached_depth_map = None
-        self._frame_count      = 0
+        self._frame_count = 0
 
     def estimate(self, frame: np.ndarray) -> np.ndarray:
         self._frame_count += 1
-        if (self._frame_count % DEPTH_SKIP_FRAMES != 0
-                and self._cached_depth_map is not None):
+        if (
+            self._frame_count % DEPTH_SKIP_FRAMES != 0
+            and self._cached_depth_map is not None
+        ):
             return self._cached_depth_map
 
-        rgb          = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        input_tensor = self.transform(rgb).to(self.device)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        input_tensor = self.transform(rgb).to(self.device)  # type: ignore
 
         with torch.no_grad():
-            raw = self.model(input_tensor)
+            raw = self.model(input_tensor)  # type: ignore
             raw = torch.nn.functional.interpolate(
                 raw.unsqueeze(1),
                 size=frame.shape[:2],
@@ -78,8 +82,8 @@ class DepthEstimator:
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(w - 1, x2), min(h - 1, y2)
 
-        bw, bh   = x2 - x1, y2 - y1
-        mx, my   = int(bw * 0.2), int(bh * 0.2)
+        bw, bh = x2 - x1, y2 - y1
+        mx, my = int(bw * 0.2), int(bh * 0.2)
         rx1, rx2 = x1 + mx, x2 - mx
         ry1, ry2 = y1 + my, y2 - my
 

@@ -13,23 +13,27 @@ class LaneDetector:
     """
 
     def __init__(self):
-        self._left_line  = None   # (x1, y1, x2, y2) smoothed
+        self._left_line = None  # (x1, y1, x2, y2) smoothed
         self._right_line = None
-        self.alpha       = config.LANE_SMOOTH_ALPHA
-        self._no_detect_count = 0   # consecutive frames without detection
-
+        self.alpha = config.LANE_SMOOTH_ALPHA
+        self._no_detect_count = 0  # consecutive frames without detection
 
     def _get_roi_mask(self, shape):
         """Returns a binary mask keeping only the lower ROI of the frame."""
         h, w = shape[:2]
         mask = np.zeros((h, w), dtype=np.uint8)
-        top  = int(h * config.LANE_ROI_TOP_FRAC)
-        roi  = np.array([[
-            (0, h),
-            (0, top),
-            (w, top),
-            (w, h),
-        ]], dtype=np.int32)
+        top = int(h * config.LANE_ROI_TOP_FRAC)
+        roi = np.array(
+            [
+                [
+                    (0, h),
+                    (0, top),
+                    (w, top),
+                    (w, h),
+                ]
+            ],
+            dtype=np.int32,
+        )
         cv2.fillPoly(mask, roi, 255)
         return mask
 
@@ -74,18 +78,18 @@ class LaneDetector:
         """
         if not lines:
             return None
-        slopes     = [s for s, _ in lines]
+        slopes = [s for s, _ in lines]
         intercepts = [b for _, b in lines]
-        slope      = float(np.median(slopes))
-        intercept  = float(np.median(intercepts))
+        slope = float(np.median(slopes))
+        intercept = float(np.median(intercepts))
 
         if abs(slope) < 1e-6:
             return None
 
         y_bottom = frame_h - 1
-        y_top    = roi_top
+        y_top = roi_top
         x_bottom = int((y_bottom - intercept) / slope)
-        x_top    = int((y_top    - intercept) / slope)
+        x_top = int((y_top - intercept) / slope)
         return (x_bottom, y_bottom, x_top, y_top)
 
     def _smooth(self, new_line, prev_line):
@@ -106,14 +110,16 @@ class LaneDetector:
     def _fallback_zone(self, frame_w, frame_h):
         """Returns the fixed config-based trapezoid as fallback."""
         frac = config.DANGER_ZONE_FRAC
-        def s(fx, fy): return (int(fx * frame_w), int(fy * frame_h))
+
+        def s(fx, fy):
+            return (int(fx * frame_w), int(fy * frame_h))
+
         return [
             s(*frac["tl"]),
             s(*frac["tr"]),
             s(*frac["br"]),
             s(*frac["bl"]),
         ]
-
 
     def detect(self, frame):
         """
@@ -126,13 +132,11 @@ class LaneDetector:
         h, w = frame.shape[:2]
         roi_top = int(h * config.LANE_ROI_TOP_FRAC)
 
-        gray    = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-        edges   = cv2.Canny(blurred,
-                            config.LANE_CANNY_LOW,
-                            config.LANE_CANNY_HIGH)
+        edges = cv2.Canny(blurred, config.LANE_CANNY_LOW, config.LANE_CANNY_HIGH)
 
-        mask        = self._get_roi_mask(frame.shape)
+        mask = self._get_roi_mask(frame.shape)
         masked_edges = cv2.bitwise_and(edges, mask)
 
         lines = cv2.HoughLinesP(
@@ -146,15 +150,14 @@ class LaneDetector:
 
         left_lines, right_lines = self._filter_lines(lines, w)
 
-        left_raw  = self._average_line(left_lines,  h, roi_top)
+        left_raw = self._average_line(left_lines, h, roi_top)
         right_raw = self._average_line(right_lines, h, roi_top)
 
         # Smooth with EMA
-        self._left_line  = self._smooth(left_raw,  self._left_line)
+        self._left_line = self._smooth(left_raw, self._left_line)
         self._right_line = self._smooth(right_raw, self._right_line)
 
-        confident = (self._left_line is not None
-                     and self._right_line is not None)
+        confident = self._left_line is not None and self._right_line is not None
 
         if confident:
             self._no_detect_count = 0
@@ -162,10 +165,10 @@ class LaneDetector:
             rx_bot, ry_bot, rx_top, ry_top = self._right_line
 
             zone_pts = [
-                (lx_top, ly_top),   # top-left  (left lane, near horizon)
-                (rx_top, ry_top),   # top-right (right lane, near horizon)
-                (rx_bot, ry_bot),   # bottom-right
-                (lx_bot, ly_bot),   # bottom-left
+                (lx_top, ly_top),  # top-left  (left lane, near horizon)
+                (rx_top, ry_top),  # top-right (right lane, near horizon)
+                (rx_bot, ry_bot),  # bottom-right
+                (lx_bot, ly_bot),  # bottom-left
             ]
         else:
             self._no_detect_count += 1
